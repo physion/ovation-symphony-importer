@@ -114,7 +114,7 @@ function src = findSource(ctx, symphony_uuid)
     src = [];
     
     disp(['      Searching for Source with UUID ' char(symphony_uuid) '...']);
-    sources = ctx.getSources();
+    sources = ctx.getRootSources();
     for i = 1:length(sources)
         s = sources(i);
         %     iter = ctx.query('Source', 'true');

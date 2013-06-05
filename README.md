@@ -28,5 +28,5 @@ To import a Symphony data file, run the `SymphonyImport` function:
 
 ## License
 
-The Ovation Neo IO importer is Copyright (c) 2013 Physion Consulting LLC and is licensed under the [GPL v3.0 license](http://www.gnu.org/licenses/gpl.html "GPLv3") license.
+The Ovation Syphony importer is Copyright (c) 2013 Physion Consulting LLC and is licensed under the [GPL v3.0 license](http://www.gnu.org/licenses/gpl.html "GPLv3") license.
 
