@@ -88,24 +88,26 @@ function updateSource(ctx, src, parent, epochGroupRoot, sourceProtocol)
     import ovation.*
 	import com.google.common.base.*;
 	
-	ovSrc = findSource(ctx, src.label, src.uuid);
+    %disp(['Update source: ' char(src.label) ' : ' char(src.uuid)]);
+	ovSrc = findSource(ctx, src.uuid);
 
     if(isempty(ovSrc))
-        if(isempty(parent))
-            parent = ctx;
-        end
         
         disp(['        Creating a new Source with UUID ' char(src.uuid) '...']);
 		protocol = ctx.getProtocol(sourceProtocol);
 		assert(~isempty(protocol), ['Could not find Protocol "' sourceProtocol '"']);
-        ovSrc = parent.insertSource(epochGroupRoot, ... 		% epoch container
-        							datetime(), ...				% epoch start
-        							datetime(), ...				% epoch end
-        							protocol, ...				% protocol
-        							struct2map(struct()),... 	%protocol parameters
-        							Optional.absent(),... 		%defice parameters
-        							src.label,  ... 			%label
-        							src.uuid); 					%identifiere
+        if isempty(parent)
+            ovSrc = ctx.insertSource(src.label, src.uuid);
+        else
+            ovSrc = parent.insertSource(epochGroupRoot, ... 		% epoch container
+            							datetime(), ...				% epoch start
+            							datetime(), ...				% epoch end
+            							protocol, ...				% protocol
+            							struct2map(struct()),... 	% protocol parameters
+            							Optional.absent(),... 		% defice parameters
+            							src.label,  ... 			% label
+            							src.uuid); 					% identifier
+        end
         ovSrc.addProperty('__symphony__uuid__', src.uuid);
     else
 		parentSources = asarray(ovSrc.getParentSources());
@@ -120,17 +122,18 @@ function updateSource(ctx, src, parent, epochGroupRoot, sourceProtocol)
     end
 end
 
-function src = findSource(ctx, label, symphony_uuid)
+function src = findSource(ctx, symphony_uuid)
     
     src = [];
-    
+
     disp(['      Searching for Source with UUID ' char(symphony_uuid) '...']);
-    sources = ovation.asarray(ctx.getSources(label, symphony_uuid));
+    sources = ovation.asarray(ctx.getSourcesWithIdentifier(symphony_uuid));
+    
     if(~isempty(sources))
         src = sources(1);
     end
     if(numel(sources) > 1)
-        warning('ovation:symphony_importer:source', ['Found multiple sources with label ' label ' and identifier ' symphony_uuid]);
+        warning('ovation:symphony_importer:find_source', ['Found multiple sources with identifier ' char(symphony_uuid) '. Sources should be unique by Symphony identifier.']);
     end
 end
 
@@ -147,7 +150,7 @@ function epochGroup = readEpochGroup(context,...
     
     label = reader.getStringAttribute(epochGroupPath, 'label');
     srcId = reader.getStringAttribute(epochGroupPath, 'source');
-    
+
     if(srcId.isEmpty() || srcId.equals('<none>'))
 %         if(parent.getClass().getCanonicalName().equals(Experiment.class))
 %             error('Source is required for root EpochGroups');
@@ -157,10 +160,7 @@ function epochGroup = readEpochGroup(context,...
         
         source = []; % parent.getSource();
     else
-        source = findSource(context,...
-            label,...
-            srcId...
-            );
+        source = findSource(context, srcId);
     end
     
     disp(['  Inserting EpochGroup ("' char(label) '")...']);
@@ -355,6 +355,8 @@ end
 function epoch = readEpoch(epochGroup, source, reader, epochPath)
     
     import ovation.*;
+
+    assert(~isempty(source))
     
     startTime = startDateTime(reader, epochPath);
     endTime = startTime.plusSeconds(reader.getFloatAttribute(epochPath,...
@@ -411,7 +413,7 @@ function epoch = readEpoch(epochGroup, source, reader, epochPath)
     %% Add keywords
 
     if(hasDuplicates || stimHasDuplicates)
-        response.addTag('symphony_multiple_device_parameters');
+        epoch.addTag('symphony_multiple_device_parameters');
     end
 
     if(hasKeywords(reader, epochPath))
