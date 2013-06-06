@@ -392,11 +392,14 @@ function epoch = readEpoch(epochGroup, source, reader, epochPath)
         protocol = epochGroup.getDataContext().insertProtocol(protocolID, '');
     end
 
-    protocolParameters = mergeStruct(protocolParameters, readStimulusParameters(reader, epochPath));
+    protocolParameters = ovation.struct2map(protocolParameters);
+    protocolParameters.putAll(readStimulusParameters(reader, epochPath));
 
-    [deivceParameters,hasDuplicates] = readResponseDeviceParameters(reader, epochPath);
+    [deviceParameters,hasDuplicates] = readResponseDeviceParameters(reader, epochPath);
     [stimDeviceParameters, stimHasDuplicates] = readStimulusDeviceParameters(reader, epochPath);
-    deivceParameters = mergeStruct(deivceParameters, stimDeviceParameters); 
+    
+    deviceParameters.putAll(stimDeviceParameters);
+    
 
     inputSources = java.util.HashMap();
     inputSources.put(source.getLabel(), source);
@@ -406,8 +409,8 @@ function epoch = readEpoch(epochGroup, source, reader, epochPath)
         startTime,...
         endTime,...
         protocol,...
-        struct2map(protocolParameters),...
-        struct2map(struct())... % TODO
+        protocolParameters,...
+        deviceParameters... % TODO
         );
     
     %% Add keywords
@@ -429,7 +432,7 @@ function epoch = readEpoch(epochGroup, source, reader, epochPath)
 end
 
 function [deviceParameters, hasDuplicates] = readResponseDeviceParameters(reader, epochPath)
-    deviceParameters = struct();
+    deviceParameters = java.util.HashMap();
     hasDuplicates = false;
     responseInfos = reader.getGroupMemberInformation(...
             [char(epochPath) '/responses'],...
@@ -446,24 +449,21 @@ function [deviceParameters, hasDuplicates] = readResponseDeviceParameters(reader
             );
 
         srate = reader.getFloatAttribute(respPath, 'sampleRate');
-        srateUnits = reader.getStringAttribute(respPath, 'sampleRateUnits');
 
-        deviceParams = readDeviceParameters(reader,respPath, srate);
+        deviceParams = readDeviceParameters(reader, respPath, srate);
         
         [deviceParams,duplicate] = consolidateDeviceParameters(deviceParams);
         if(duplicate)
             hasDuplicates = true;
         end
 
-        prefixedDeviceParams = struct();
         fnames = fieldnames(deviceParams);
         for j = 1:length(fnames)
             f = fnames{j};
             fname = [char(deviceManufacturer) '.' char(deviceName) '.' char(f)];
-            prefixedDeviceParams.(genvarname(fname)) = deviceParams.(f);
+            deviceParameters.put(fname, deviceParams.(f));
         end
 
-        deviceParameters = ovation.mergeStruct(deviceParameters, prefixedDeviceParams);
     end
 end
 
@@ -702,7 +702,7 @@ function parameters = readDeviceParameters(reader, respPath, srate)
 end
 
 function [deviceParameters,hasDuplicates] = readStimulusDeviceParameters(reader, epochPath)
-    deviceParameters = struct();
+    deviceParameters = java.util.HashMap();
     hasDuplicates = false;
 
     stimuliInfos = reader.getGroupMemberInformation(...
@@ -726,21 +726,17 @@ function [deviceParameters,hasDuplicates] = readStimulusDeviceParameters(reader,
             hasDuplicates = true;
         end
 
-        prefixedDeviceParams = struct();
         fnames = fieldnames(deviceParams);
         for j = 1:length(fnames)
             f = fnames{j};
             fname = [char(deviceManufacturer) '.' char(deviceName) '.' char(f)];
-            prefixedDeviceParams.(genvarname(fname)) = deviceParams.(f);
+            deviceParameters.put(fname, deviceParams.(f));
         end
-
-        deviceParameters = ovation.mergeStruct(deviceParameters, prefixedDeviceParams);
     end
 end
 
-function parametersStruct = readStimulusParameters(reader, epochPath)
+function parameters = readStimulusParameters(reader, epochPath)
     parameters = java.util.HashMap();
-    parametersStruct = struct();
 
     stimuliInfos = reader.getGroupMemberInformation(...
         [char(epochPath) '/stimuli'],...
@@ -761,12 +757,11 @@ function parametersStruct = readStimulusParameters(reader, epochPath)
         fnames = fieldnames(stimParams);
         for j = 1:length(fnames)
             f = fnames{j};
-            fname = [genvarname(char(stimulusId)) '.' char(f)];
+            fname = [char(stimulusId) '.' char(f)];
             parameters.put(fname, stimParams.(char(f)));
         end
     end
 
-    parametersStruct = ovation.map2struct(parameters);
 end
 
 
