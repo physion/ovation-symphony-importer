@@ -435,7 +435,7 @@ function [deviceParameters, hasDuplicates] = readResponseDeviceParameters(reader
             [char(epochPath) '/responses'],...
             true...
             );
-        
+    
     for i = 0:(responseInfos.size() - 1)
         respPath = responseInfos.get(i).getPath();
         deviceName = reader.getStringAttribute(responseInfos.get(i).getPath(),...
@@ -521,7 +521,7 @@ function readResponse(epoch, source, deviceName, deviceManufacturer, reader, res
     
     C = onCleanup(@() cleanup(dset,space,datatype,file));
     
-    device = [deviceManufacturer '.' deviceName];
+    device = [char(deviceManufacturer) '.' char(deviceName)];
     
 
     units = unique(cellstr(rdata.unit'));
@@ -529,9 +529,10 @@ function readResponse(epoch, source, deviceName, deviceManufacturer, reader, res
         error('ovation:symphony_importer:units', 'Units are not homogenous in response data.');
     end
     
-
-    data = NumericData();
-    data.addata(deviceName,...
+    srate = reader.getFloatAttribute(respPath, 'sampleRate');
+    
+    data = us.physion.ovation.values.NumericData();
+    data.addData(deviceName,...
         rdata.quantity',...
         units{1},...
         srate,...
@@ -541,6 +542,8 @@ function readResponse(epoch, source, deviceName, deviceManufacturer, reader, res
         arrayToSet({source.getLabel()}),...
         arrayToSet({device}),...
         data);
+    
+    disp(['      Inserted response ' char(deviceName)]);
     
     function cleanup(dset,space,datatype,file)
         H5D.close(dset);
