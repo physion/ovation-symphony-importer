@@ -88,12 +88,8 @@ function updateSource(ctx, src, parent, epochGroupRoot, sourceProtocol)
     import ovation.*
 	import com.google.common.base.*;
 	
-	% if(isempty(parent))
-	ovSrc = findSource(asarray(ctx.getRootSources()), src.uuid);
-	% else
-	% 		ovSrc = findSource(asarray(parent.getChildrenSources()), src.uuid);
-	% 	end
-	
+	ovSrc = findSource(ctx, src.label, src.uuid);
+
     if(isempty(ovSrc))
         if(isempty(parent))
             parent = ctx;
@@ -124,33 +120,17 @@ function updateSource(ctx, src, parent, epochGroupRoot, sourceProtocol)
     end
 end
 
-function src = findSource(sources, symphony_uuid)
-    
-	import ovation.*;
-	
-    %TODO: this can be changed to the query below once issue #734 is
-    %resolved:
-    % ['any(elementsOfType(properties("__symphony__uuid__"), class:ovation.StringValue), value=="' char(symphony_uuid) '")']
+function src = findSource(ctx, label, symphony_uuid)
     
     src = [];
     
-    % disp(['      Searching for Source with UUID ' char(symphony_uuid) '...']);
-    for i = 1:length(sources)
-        s = sources(i);
-        %     iter = ctx.query('Source', 'true');
-        %     while(iter.hasNext())
-        %         s = iter.next();
-        uuid = s.getUserProperty(s.getOwner(), '__symphony__uuid__');
-        if(strcmp(uuid,symphony_uuid))
-            src = s;
-            disp(['        Found Source with UUID ' char(symphony_uuid) '...']);
-            return;
-        end
-		
-		src = findSource(asarray(s.getChildrenSources()), symphony_uuid);
-		if(~isempty(src))
-			return;
-		end
+    disp(['      Searching for Source with UUID ' char(symphony_uuid) '...']);
+    sources = ovation.asarray(ctx.getSources(label, symphony_uuid));
+    if(~isempty(sources))
+        src = sources(1);
+    end
+    if(numel(sources) > 1)
+        warning('ovation:symphony_importer:source', ['Found multiple sources with label ' label ' and identifier ' symphony_uuid]);
     end
 end
 
@@ -177,25 +157,20 @@ function epochGroup = readEpochGroup(context,...
         
         source = []; % parent.getSource();
     else
-        source = findSource(asarray(context.getRootSources()),...
+        source = findSource(context,...
+            label,...
             srcId...
             );
     end
     
     disp(['  Inserting EpochGroup ("' char(label) '")...']);
     
-    if(isempty(source))
-        epochGroup = parent.insertEpochGroup(label,...
+    epochGroup = parent.insertEpochGroup(label,...
             startTime,...
-            endTime...
+            [],...
+            struct2map(struct()),...
+            struct2map(struct())...
             );
-    else
-        epochGroup = parent.insertEpochGroup(source,...
-            label,...
-            startTime,...
-            endTime...
-            );
-    end
     
     %% Add properties
     
@@ -243,12 +218,14 @@ function epochGroup = readEpochGroup(context,...
         disp(['    Epoch ' num2str(i+1) '...']);
         
         epoch = readEpoch(epochGroup,...
+            source,...
             reader,...
             epochPath...
             );
         
         if(~isempty(prevEpoch))
-            epoch.setPreviousEpoch(prevEpoch);
+            %epoch.setPreviousEpoch(prevEpoch);
+            warning('ovation:symphony_importer:not_implemented', 'Epoch next/previous linking not implemented');
         end
         
         prevEpoch = epoch;
@@ -375,10 +352,7 @@ function d = readDictionary(reader, group, name)
     end
 end
 
-function epoch = readEpoch(epochGroup,...
-        reader,...
-        epochPath...
-        )
+function epoch = readEpoch(epochGroup, source, reader, epochPath)
     
     import ovation.*;
     
@@ -392,9 +366,9 @@ function epoch = readEpoch(epochGroup,...
     
     % Protocol parameters
     if(isGroup(reader, epochPath, 'protocolParameters'))
-        protocolParameters = struct2map(readDictionary(reader,...
+        protocolParameters = readDictionary(reader,...
             epochPath,...
-            'protocolParameters'));
+            'protocolParameters');
     else
         props = reader.readCompoundArray(...
             [char(epochPath) '/protocolParameters'],...
@@ -407,32 +381,91 @@ function epoch = readEpoch(epochGroup,...
             end
         end
         
-        protocolParameters = struct2map(parameters);
+        protocolParameters = parameters;
     end
     
-    epoch = epochGroup.insertEpoch(startTime,...
+    protocol = epochGroup.getDataContext().getProtocol(protocolID);
+    if(isempty(protocol))
+        disp(['      Inserting protocol ' char(protocolID)]);
+        protocol = epochGroup.getDataContext().insertProtocol(protocolID, '');
+    end
+
+    protocolParameters = mergeStruct(protocolParameters, readStimulusParameters(reader, epochPath));
+
+    [deivceParameters,hasDuplicates] = readResponseDeviceParameters(reader, epochPath);
+    [stimDeviceParameters, stimHasDuplicates] = readStimulusDeviceParameters(reader, epochPath);
+    deivceParameters = mergeStruct(deivceParameters, stimDeviceParameters); 
+
+    inputSources = java.util.HashMap();
+    inputSources.put(source.getLabel(), source);
+
+    epoch = epochGroup.insertEpoch(inputSources,...
+        java.util.HashMap(),... % output sources
+        startTime,...
         endTime,...
-        protocolID,...
-        protocolParameters...
+        protocol,...
+        struct2map(protocolParameters),...
+        struct2map(struct())... % TODO
         );
     
     %% Add keywords
+
+    if(hasDuplicates || stimHasDuplicates)
+        response.addTag('symphony_multiple_device_parameters');
+    end
+
     if(hasKeywords(reader, epochPath))
         addKeywords(reader, epochPath, epoch);
     end
-    %% Read stimuli
-    readStimuli(epoch,...
-        reader,...
-        epochPath...
-        );
+
     %% Read responses
     readResponses(epoch,...
+        source,...
         reader,...
         epochPath...
         );
 end
 
-function readResponses(epoch, reader, epochPath)
+function [deviceParameters, hasDuplicates] = readResponseDeviceParameters(reader, epochPath)
+    deviceParameters = struct();
+    hasDuplicates = false;
+    responseInfos = reader.getGroupMemberInformation(...
+            [char(epochPath) '/responses'],...
+            true...
+            );
+        
+    for i = 0:(responseInfos.size() - 1)
+        respPath = responseInfos.get(i).getPath();
+        deviceName = reader.getStringAttribute(responseInfos.get(i).getPath(),...
+            'deviceName'...
+            );
+        deviceManufacturer = reader.getStringAttribute(responseInfos.get(i).getPath(),...
+            'deviceManufacturer'...
+            );
+
+        srate = reader.getFloatAttribute(respPath, 'sampleRate');
+        srateUnits = reader.getStringAttribute(respPath, 'sampleRateUnits');
+
+        deviceParams = readDeviceParameters(reader,respPath, srate);
+        
+        [deviceParams,duplicate] = consolidateDeviceParameters(deviceParams);
+        if(duplicate)
+            hasDuplicates = true;
+        end
+
+        prefixedDeviceParams = struct();
+        fnames = fieldnames(deviceParams);
+        for j = 1:length(fnames)
+            f = fnames{j};
+            fname = [char(deviceManufacturer) '.' char(deviceName) '.' char(f)];
+            prefixedDeviceParams.(genvarname(fname)) = deviceParams.(f);
+        end
+
+        deviceParameters = ovation.mergeStruct(deviceParameters, prefixedDeviceParams);
+    end
+end
+
+function readResponses(epoch, source, reader, epochPath)
     
     try
         responseInfos = reader.getGroupMemberInformation(...
@@ -450,6 +483,7 @@ function readResponses(epoch, reader, epochPath)
                 );
             
             readResponse(epoch,...
+                source,...
                 deviceName,...
                 deviceManufacturer,...
                 reader,...
@@ -462,12 +496,9 @@ function readResponses(epoch, reader, epochPath)
     
 end
 
-function readResponse(epoch, deviceName, deviceManufacturer, reader, respPath)
+function readResponse(epoch, source, deviceName, deviceManufacturer, reader, respPath)
     
     import ovation.*;
-    
-    srate = reader.getFloatAttribute(respPath, 'sampleRate');
-    srateUnits = reader.getStringAttribute(respPath, 'sampleRateUnits');
     
     
     file = H5F.open(char(reader.getFile()), 'H5F_ACC_RDONLY', 'H5P_DEFAULT');
@@ -488,40 +519,26 @@ function readResponse(epoch, deviceName, deviceManufacturer, reader, respPath)
     
     C = onCleanup(@() cleanup(dset,space,datatype,file));
     
-    device = epoch.getEpochGroup().getExperiment().externalDevice(...
-        deviceName,...
-        deviceManufacturer...
-        );
+    device = [deviceManufacturer '.' deviceName];
     
-    deviceParams = readDeviceParameters(reader,respPath, srate);
-    
-    [deviceParams,hasDuplicates] = consolidateDeviceParameters(deviceParams);
-    
-    deviceParamsMap = java.util.HashMap();
-    ks = deviceParams.keys;
-    for i = 1:length(ks)
-        if(~isempty(deviceParams(ks{i})))
-            deviceParamsMap.put(ks{i}, deviceParams(ks{i}));
-        end
-    end
-    
+
     units = unique(cellstr(rdata.unit'));
     if(numel(units) > 1)
         error('ovation:symphony_importer:units', 'Units are not homogenous in response data.');
     end
     
-    response = epoch.insertResponse(device,...
-        deviceParamsMap,...
-        NumericData(single(rdata.quantity')),...
+
+    data = NumericData();
+    data.addata(deviceName,...
+        rdata.quantity',...
         units{1},...
-        [], ...
         srate,...
-        srateUnits,...
-        Response.NUMERIC_DATA_UTI);
-    
-    if(hasDuplicates)
-        response.addTag('symphony_multiple_device_parameters');
-    end
+        'Hz');
+
+    response = epoch.insertNumericMeasurement(deviceName,...
+        arrayToSet({source.getLabel()}),...
+        arrayToSet({device}),...
+        data);
     
     function cleanup(dset,space,datatype,file)
         H5D.close(dset);
@@ -620,7 +637,7 @@ function parameters = readDeviceParameters(reader, respPath, srate)
         span = [spansGroup '/span_' num2str(i)];
         startTimeSeconds = reader.getFloatAttribute(span, 'startTimeSeconds');
         gapSeconds = abs(startTimeSeconds - cStart);
-        if gapSeconds > 0 && (nargin >= 3 && gapSeconds > (1/srate))
+        if ~isempty(srate) && gapSeconds > 0 && (nargin >= 3 && gapSeconds > (1/srate))
             warning('ovation:symphony_importer:missing_configuration_span', 'Response appears to have missing device configuration span');
         end
         
@@ -679,79 +696,75 @@ function parameters = readDeviceParameters(reader, respPath, srate)
     end
 end
 
-function readStimuli(epoch, reader, epochPath)
-    
-    try
-        stimuliInfos = reader.getGroupMemberInformation(...
-            [char(epochPath) '/stimuli'],...
-            true...
+function [deviceParameters,hasDuplicates] = readStimulusDeviceParameters(reader, epochPath)
+    deviceParameters = struct();
+    hasDuplicates = false;
+
+    stimuliInfos = reader.getGroupMemberInformation(...
+        [char(epochPath) '/stimuli'],...
+        true...
+        );
+    for i = 0:(stimuliInfos.size()-1)
+        stimPath = stimuliInfos.get(i).getPath();
+        deviceName = reader.getStringAttribute(stimuliInfos.get(i).getPath(),...
+            'deviceName'...
             );
-        for i = 0:(stimuliInfos.size()-1)
-            stimPath = stimuliInfos.get(i).getPath();
-            deviceName = reader.getStringAttribute(stimuliInfos.get(i).getPath(),...
-                'deviceName'...
-                );
-            deviceManufacturer = reader.getStringAttribute(stimuliInfos.get(i).getPath(),...
-                'deviceManufacturer'...
-                );
-            readStimulus(epoch,...
-                deviceName,...
-                deviceManufacturer,...
-                reader,...
-                stimPath...
-                );
+        deviceManufacturer = reader.getStringAttribute(stimuliInfos.get(i).getPath(),...
+            'deviceManufacturer'...
+            );
+
+        
+        deviceParams = readDeviceParameters(reader, stimPath, []);
+        
+        [deviceParams,duplicate] = consolidateDeviceParameters(deviceParams);
+        if(duplicate)
+            hasDuplicates = true;
         end
-    catch ME %#ok<NASGU>
-        epoch.addTag('symphony_missing_stimuli');
+
+        prefixedDeviceParams = struct();
+        fnames = fieldnames(deviceParams);
+        for j = 1:length(fnames)
+            f = fnames{j};
+            fname = [char(deviceManufacturer) '.' char(deviceName) '.' char(f)];
+            prefixedDeviceParams.(genvarname(fname)) = deviceParams.(f);
+        end
+
+        deviceParameters = ovation.mergeStruct(deviceParameters, prefixedDeviceParams);
     end
-    
 end
 
-function readStimulus(epoch, deviceName, deviceManufacturer, reader, stimPath)
-    
-    import ovation.*;
-    
-    stimulusID = reader.getStringAttribute(stimPath, 'stimulusID');
-    
-    %% Device
-    device = epoch.getEpochGroup().getExperiment().externalDevice(...
-        deviceName,...
-        deviceManufacturer...
+function parametersStruct = readStimulusParameters(reader, epochPath)
+    parameters = java.util.HashMap();
+    parametersStruct = struct();
+
+    stimuliInfos = reader.getGroupMemberInformation(...
+        [char(epochPath) '/stimuli'],...
+        true...
         );
-    
-    deviceParams = readDeviceParameters(reader, stimPath);
-    
-    [deviceParams,hasDuplicates] = consolidateDeviceParameters(deviceParams);
-    
-    deviceParamsMap = java.util.HashMap();
-    ks = deviceParams.keys;
-    for i = 1:length(ks)
-        if(~isempty(deviceParams(ks{i})))
-            deviceParamsMap.put(ks{i}, deviceParams(ks{i}));
+    for i = 0:(stimuliInfos.size()-1)
+        stimPath = stimuliInfos.get(i).getPath();
+        stimulusId = reader.getStringAttribute(stimPath, 'stimulusID');
+
+        if(hasParameters(reader, stimPath))
+            stimParams = readDictionary(reader, stimPath, 'parameters'); 
+        else
+            stimParams = struct();
+        end
+        
+        stimParams.units = reader.getStringAttribute(stimPath, 'stimulusUnits');
+
+        fnames = fieldnames(stimParams);
+        for j = 1:length(fnames)
+            f = fnames{j};
+            fname = [genvarname(char(stimulusId)) '.' char(f)];
+            parameters.put(fname, stimParams.(char(f)));
         end
     end
-    
-    %% Parameters
-    if(hasParameters(reader, stimPath))
-        stimParams = readDictionary(reader, stimPath, 'parameters'); 
-    else
-        stimParams = struct();
-    end
-    
-    stimUnits = reader.getStringAttribute(stimPath, 'stimulusUnits');
-    
-    %% Insertion
-    stimulus = epoch.insertStimulus(device,...
-        deviceParamsMap,...
-        stimulusID,...
-        struct2map(stimParams),...
-        stimUnits,...
-        []);
-    
-    if(hasDuplicates)
-        stimulus.addTag('symphony_multiple_device_parameters');
-    end
+
+    parametersStruct = ovation.map2struct(parameters);
 end
+
+
 
 function kvps = readTableKVPs(reader, tblPath)
     kvps = reader.readCompoundArray(...
