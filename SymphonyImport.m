@@ -1,7 +1,8 @@
 function epochGroups = SymphonyImport(ctx,...
         symphonyHDF5Path,...
         metadataXMLPath,...
-        epochGroupRoot...
+        epochGroupRoot,...
+        sourceProtocol...
         )
     % Imports a Symphony data file into Ovation.
     %
@@ -13,6 +14,7 @@ function epochGroups = SymphonyImport(ctx,...
     %            xmlPath: Full path to Symphony metadata XML file
     %     epochGroupRoot: Ovation object root for this experiment's data
     %                     (i.e. an Experiment or EpochGroup instance)
+	%	  sourceProtocol: Protocol name for Source derivation
     %
     %  Returns an array of imported EpochGroups.
     
@@ -35,7 +37,7 @@ function epochGroups = SymphonyImport(ctx,...
     fields = fieldnames(sources);
     for i = 1:length(fields)
         disp(['    ' num2str(i) ' of ' num2str(length(fields)) '...' ]);
-        updateSource(ctx, sources.(fields{i}), []);
+        updateSource(ctx, sources.(fields{i}), [], epochGroupRoot, sourceProtocol);
     end
     
     %% Load EpochGroups
@@ -82,50 +84,73 @@ function epochGroups = SymphonyImport(ctx,...
 end
 
 
-function updateSource(ctx, src, parent)
-    
-    ovSrc = findSource(ctx, src.uuid);
+function updateSource(ctx, src, parent, epochGroupRoot, sourceProtocol)
+    import ovation.*
+	import com.google.common.base.*;
+	
+	% if(isempty(parent))
+	ovSrc = findSource(asarray(ctx.getRootSources()), src.uuid);
+	% else
+	% 		ovSrc = findSource(asarray(parent.getChildrenSources()), src.uuid);
+	% 	end
+	
     if(isempty(ovSrc))
         if(isempty(parent))
             parent = ctx;
         end
         
         disp(['        Creating a new Source with UUID ' char(src.uuid) '...']);
-        ovSrc = parent.insertSource(src.label);
+		protocol = ctx.getProtocol(sourceProtocol);
+		assert(~isempty(protocol), ['Could not find Protocol "' sourceProtocol '"']);
+        ovSrc = parent.insertSource(epochGroupRoot, ... 		% epoch container
+        							datetime(), ...				% epoch start
+        							datetime(), ...				% epoch end
+        							protocol, ...				% protocol
+        							struct2map(struct()),... 	%protocol parameters
+        							Optional.absent(),... 		%defice parameters
+        							src.label,  ... 			%label
+        							src.uuid); 					%identifiere
         ovSrc.addProperty('__symphony__uuid__', src.uuid);
     else
-        assert((isempty(parent) && isempty(ovSrc.getParent())) || parent.equals(ovSrc.getParent()));
+		parentSources = asarray(ovSrc.getParentSources());
+        assert((isempty(parent) && isempty(parentSources)) || parent.equals(parentSources(1)));
     end
     
     if(isfield(src, 'children'))
         cNames = fieldnames(src.children);
         for i = 1:length(cNames)
-            updateSource(ctx, src.children.(cNames{i}), ovSrc);
+            updateSource(ctx, src.children.(cNames{i}), ovSrc, epochGroupRoot, sourceProtocol);
         end
     end
 end
 
-function src = findSource(ctx, symphony_uuid)
+function src = findSource(sources, symphony_uuid)
     
+	import ovation.*;
+	
     %TODO: this can be changed to the query below once issue #734 is
     %resolved:
     % ['any(elementsOfType(properties("__symphony__uuid__"), class:ovation.StringValue), value=="' char(symphony_uuid) '")']
     
     src = [];
     
-    disp(['      Searching for Source with UUID ' char(symphony_uuid) '...']);
-    sources = ctx.getRootSources();
+    % disp(['      Searching for Source with UUID ' char(symphony_uuid) '...']);
     for i = 1:length(sources)
         s = sources(i);
         %     iter = ctx.query('Source', 'true');
         %     while(iter.hasNext())
         %         s = iter.next();
-        uuid = s.getOwnerProperty('__symphony__uuid__');
+        uuid = s.getUserProperty(s.getOwner(), '__symphony__uuid__');
         if(strcmp(uuid,symphony_uuid))
             src = s;
             disp(['        Found Source with UUID ' char(symphony_uuid) '...']);
             return;
         end
+		
+		src = findSource(asarray(s.getChildrenSources()), symphony_uuid);
+		if(~isempty(src))
+			return;
+		end
     end
 end
 
@@ -152,7 +177,7 @@ function epochGroup = readEpochGroup(context,...
         
         source = []; % parent.getSource();
     else
-        source = findSource(context,...
+        source = findSource(asarray(context.getRootSources()),...
             srcId...
             );
     end
