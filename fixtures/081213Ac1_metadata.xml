@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<symphony-metadata>
+   <source identifier="493ffc29-7e6e-42b5-876b-f5ed9242f2c3" label="Mouse">
+      <source identifier="ced60e22-6beb-4a53-aec8-deea94cf5413" label="Retina">
+         <source identifier="e467f371-9c83-4547-a503-1f50041f5a11" label="081213Ac1"/>
+      </source>
+   </source>
+   <notes>
+      <note time="8/12/2013 5:57:27 PM -07:00">oh, a note here</note>
+      <note time="8/12/2013 5:59:22 PM -07:00">another note</note>
+   </notes>
+</symphony-metadata>

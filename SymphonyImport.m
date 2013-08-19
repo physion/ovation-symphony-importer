@@ -7,7 +7,8 @@ function epochGroups = SymphonyImport(ctx,...
     % Imports a Symphony data file into Ovation.
     %
     %   epochGroups = SymphonyImport(context, h5Path, xmlPath,
-    %                                  epochGroupRoot);
+    %                                  epochGroupRoot,
+    %                                  sourceProtocol);
     %
     %            context: Ovation DataContext instance
     %             h5Path: Full path to Symphony HDF5 file
@@ -151,26 +152,33 @@ function epochGroup = readEpochGroup(context,...
     label = reader.getStringAttribute(epochGroupPath, 'label');
     srcId = reader.getStringAttribute(epochGroupPath, 'source');
 
+    epochGroupSourceIdKey = '__symphony__source__id__';
+    
     if(srcId.isEmpty() || srcId.equals('<none>'))
-%         if(parent.getClass().getCanonicalName().equals(Experiment.class))
-%             error('Source is required for root EpochGroups');
-%         else
-%             assert(~isempty(parent.getSource()));
-%         end
-        
-        source = []; % parent.getSource();
-    else
-        source = findSource(context, srcId);
+        srcId = parent.getUserProperty(parent.getOwner(), epochGroupSourceIdKey);
+        assert(~isempty(srcId), 'EpochGroup and parent do not have a Source ID');
     end
+    
+    source = findSource(context, srcId);
+    
     
     disp(['  Inserting EpochGroup ("' char(label) '")...']);
     
     epochGroup = parent.insertEpochGroup(label,...
-            startTime,...
-            [],...
-            struct2map(struct()),...
-            struct2map(struct())...
-            );
+        startTime,...
+        [],...
+        struct2map(struct()),...
+        struct2map(struct())...
+        );
+    
+    
+    % Ovation EpochGroups do not have a Source. Epochs have a set of
+    % (named) input Sources, which are referenced by the Epoch's
+    % Measurements. Symphony EpochGroups have a single Source, however. We
+    % store the Source's ID as an EpochGroup property so that EpochGroups
+    % with '<none>' as their Source ID can pull the appropriate Source ID
+    % from their parent.
+    epochGroup.addProperty(epochGroupSourceIdKey, srcId);
     
     %% Add properties
     
@@ -212,6 +220,7 @@ function epochGroup = readEpochGroup(context,...
         );
     
     prevEpoch = [];
+    nextPrevWarned = false;
     for i = 0:(epochInfos.size() - 1)
         epochPath = epochInfos.get(i).getPath();
         
@@ -223,9 +232,10 @@ function epochGroup = readEpochGroup(context,...
             epochPath...
             );
         
-        if(~isempty(prevEpoch))
+        if(~isempty(prevEpoch) && ~nextPrevWarned)
             %epoch.setPreviousEpoch(prevEpoch);
             warning('ovation:symphony_importer:not_implemented', 'Epoch next/previous linking not implemented');
+            nextPrevWarned = true;
         end
         
         prevEpoch = epoch;
