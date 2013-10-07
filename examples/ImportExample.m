@@ -6,6 +6,25 @@ context = NewDataContext();
 
 experiment = context.getObjectWithURI('...experiment URI here...');
 
+% If the experiment doesn't have an equipment setup yet, add it here
+if(isempty(experiment.getEquipmentSetup()))
+    equipment = struct();
+    
+    % SymphonyImport uses DEVICE_MANUFACTURER.DEVICE_NAME (as stored in the
+    % Symphony HDF5/xml. You should provide static attributes of those
+    % devices using the same convention as below. Add entries for each
+    % device used in the Symphony data. Attribute values are for
+    % demonstration only. You should use the appropriate attributes and
+    % values for your devices.
+    equipment.MANUFACTURER.DEVICE_1_NAME.serial_number = 123;
+    equipment.MANUFACTURER.DEVICE_1_NAME.label = '<useful label>';
+    
+    equipment.MANUFACTURER.DEVICE_2_NAME.serial_number = 'abc';
+    equipment.MANUFACTURER.DEVICE_2_NAME.label = '<other label>';
+    % etc.
+    
+    experiment.setEquipmentSetupFromMap(struct2map(equipment));
+end
 
 %% Find or create the Source protocol
 
@@ -37,7 +56,7 @@ h5file = '110311Dc1.h5';
 metadata_xml = '110311Dc1_metadata.xml';
 
 % Groups will be a list of inserted EpochGroups
-groups = SymphonyImport(self.context,...
+groups = SymphonyImport(context,...
     fullfile(pwd(), pathToData, h5file),...
     fullfile(pwd(), pathToData, metadata_xml),...
     experiment,...
