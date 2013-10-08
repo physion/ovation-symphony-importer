@@ -1,4 +1,8 @@
 %% Create a DataContext
+% Add the CISD JHDF5 library to the Java classpath
+javaaddpath(fullfile(pwd(), 'cisd-jhdf5.jar'));
+
+% Import the Ovation API and create a new DataContext
 import ovation.*
 context = NewDataContext();
 
