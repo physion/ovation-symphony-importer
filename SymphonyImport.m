@@ -527,7 +527,7 @@ function readResponse(epoch, source, deviceName, deviceManufacturer, reader, res
     datatype = H5T.open(file, 'MEASUREMENT');
     rdata=H5D.read (dset, datatype, 'H5S_ALL', 'H5S_ALL', 'H5P_DEFAULT');
     
-    %C = onCleanup(@() cleanup(dset,space,datatype,file));
+    C = onCleanup(@() cleanup(dset,space,datatype,file));
     
     device = [char(deviceManufacturer) '.' char(deviceName)];
     
@@ -548,16 +548,18 @@ function readResponse(epoch, source, deviceName, deviceManufacturer, reader, res
 
     
     epoch.insertNumericMeasurement(deviceName,...
-        arrayToSet({source.getLabel()}),...
-        arrayToSet({device}),...
+        array2set({source.getLabel()}),...
+        array2set({device}),...
         data);
     
     disp(['      Inserted response ' char(deviceName)]);
     
-    H5D.close(dset);
-    H5S.close(space);
-    H5T.close(datatype);
-    H5F.close(file);
+    function cleanup(dset,space,datatype,file)
+        H5D.close(dset);
+        H5S.close(space);
+        H5T.close(datatype);
+        H5F.close(file);
+    end
     
 end
 
