@@ -38,15 +38,15 @@ end
 
 % Replace this protocol name with the correct name for your Source
 % protocol.
-protocolName = 'Protocol for deriving cells Sources from Animals';
+sourceProtocolName = 'Protocol for deriving cells Sources from Animals';
 
 % Retrieve the named protocol
-sourceProtocol = context.getProtocol(protocolName);
+sourceProtocol = context.getProtocol(sourceProtocolName);
 if(isempty(sourceProtocol)) % protocol does not exist yet
     
     % Replace the second parameter with your protocol's description, using
     % {VARIABLE_NAME} to denote variables/parameters in the protocol.
-    sourceProtocol = context.insertProtocol(protocolName, '...Protocol Document Here...');
+    sourceProtocol = context.insertProtocol(sourceProtocolName, '...Protocol Document Here...');
 end
 
 srcDerivationParameters = struct(); % Any parameters of this protocol such as incubation time, reagent concentrations, etc.?
@@ -64,4 +64,10 @@ groups = SymphonyImport(context,...
     fullfile(pwd(), pathToData, h5file),...
     fullfile(pwd(), pathToData, metadata_xml),...
     experiment,...
-    sourceProtocol);
+    sourceProtocolName);
+
+%% Get some data
+epoch = context.getObjectWithURI('...Epoch URI here...');
+m = epoch.getMeasurement('Amplifier_Ch1');
+data = nm2data(m);
+plot(data.Amplifier_Ch1);
