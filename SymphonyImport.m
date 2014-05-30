@@ -532,7 +532,7 @@ function readResponse(epoch, source, deviceName, deviceManufacturer, reader, res
     device = [char(deviceManufacturer) '.' char(deviceName)];
     
 
-    units = unique(cellstr(rdata.unit'));
+    units = cellstr(unique(rdata.unit', 'rows'));
     if(numel(units) > 1)
         error('ovation:symphony_importer:units', 'Units are not homogenous in response data.');
     end

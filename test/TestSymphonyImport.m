@@ -57,7 +57,7 @@ classdef TestSymphonyImport < MatlabTestCase
             h5file = '110311Dc1.h5';
             metadata_xml = '110311Dc1_metadata.xml'; 
             
-            runImport(context, project, pathToData, h5file, metadata_xml, 2, 20)
+            self.runImport(context, project, pathToData, h5file, metadata_xml, 2, 20)
         end
 
         function testIntegration2(self)
@@ -71,7 +71,7 @@ classdef TestSymphonyImport < MatlabTestCase
             h5file = '081213Ac1.h5';
             metadata_xml = '081213Ac1_metadata.xml'; 
             
-            groups = it2array(runImport(context, project, pathToData, h5file, metadata_xml, 1, 63));
+            groups = it2array(self.runImport(context, project, pathToData, h5file, metadata_xml, 1, 63));
             
             child_groups = groups(1).getEpochGroups();
             assert(1 == length(it2array(child_groups)));
