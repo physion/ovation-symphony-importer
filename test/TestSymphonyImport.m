@@ -73,16 +73,14 @@ classdef TestSymphonyImport < MatlabTestCase
             
             groups = it2array(self.runImport(context, project, pathToData, h5file, metadata_xml, 1, 63));
             
-            child_groups = groups(1).getEpochGroups();
-            assert(1 == length(it2array(child_groups)));
+            child_groups = asarray(groups(1).getEpochGroups());
+            assert(1 == length(child_groups));
+            
             n = 0;
-            while(child_groups.hasNext())
-                epochGroup = child_groups.next();
-                eItr = epochGroup.getEpochs().iterator();
-                while(eItr.hasNext())
-                    n = n+1;
-                    eItr.next();
-                end
+            for i = 1:length(child_groups)
+                epochGroup = child_groups(i);
+                epochs = asarray(epochGroup.getEpochs());
+                n = n + length(epochs);
             end
             
             assert(11 == n);
