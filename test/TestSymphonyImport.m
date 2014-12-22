@@ -1,13 +1,8 @@
-classdef TestSymphonyImport < MatlabTestCase
+classdef TestSymphonyImport < ovation.test.MethodFixtureTestCase
     methods
-        
-        function self = TestSymphonyImport(name)
-            self = self@MatlabTestCase(name);
-        end
-        
         function groups = runImport(self, context, project, pathToData,...
                 h5file, metadata_xml,  n_groups, n_root_group_epochs)
-
+            
             import ovation.*;
             
             sourceProtocol = 'source-protocol';
@@ -25,7 +20,7 @@ classdef TestSymphonyImport < MatlabTestCase
                     fullfile(pwd(), pathToData, metadata_xml),...
                     exp,...
                     sourceProtocol);
-                                                
+                
                 % Should have inserted one root EpochGroup
                 assert(length(groups) == n_groups);
                 
@@ -45,6 +40,9 @@ classdef TestSymphonyImport < MatlabTestCase
                 assert(n == n_root_group_epochs);
             end
         end
+    end
+    
+    methods(Test)
 
         function testIntegration1(self)
             import ovation.*;
